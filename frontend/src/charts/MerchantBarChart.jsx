@@ -24,7 +24,7 @@ const MerchantBarChart = () => {
     labels: data.map(item => item._id),
     datasets: [
       {
-        label: 'Frequency of Categories',
+        label: 'Frequency of Merchants',
         data: data.map(item => item.count),
         backgroundColor: 'rgba(75, 192, 192, 0.2)',
         borderColor: 'rgba(75, 192, 192, 1)',
