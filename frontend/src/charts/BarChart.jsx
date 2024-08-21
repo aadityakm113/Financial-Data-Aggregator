@@ -4,13 +4,13 @@ import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Toolti
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-const MerchantBarChart = () => {
+const BarChart = () => {
   const [data, setData] = useState([]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/v1/financial-data/merchants');
+        const response = await fetch('http://localhost:8000/api/v1/financial-data/categories');
         const result = await response.json();
         setData(result);
       } catch (error) {
@@ -36,4 +36,4 @@ const MerchantBarChart = () => {
   return <Bar data={chartData} />;
 };
 
-export default MerchantBarChart;
+export default BarChart;

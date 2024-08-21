@@ -242,5 +242,31 @@ app.get('/api/v1/financial-data/customers-by-age-gender', async (req, res) => {
   }
 });
 
+
+// Route to get fraud amount by category
+app.get('/api/v1/financial-data/fraud-by-category', async (req, res) => {
+    try {
+      const fraudData = await FinancialData.aggregate([
+        { $match: { fraud: { $gt: 0 } } }, // Filter for fraud cases
+        { $group: { _id: "$category", totalAmount: { $sum: "$amount" }, fraudCount: { $sum: 1 } } }
+      ]);
+      res.json(fraudData); // Ensure this is sending valid JSON
+    } catch (err) {
+      console.error('Error fetching fraud data by category:', err);
+      res.status(500).json({ message: 'Internal server error', error: err.message });
+    }
+});
+
+// Route to get total number of fraud accounts
+app.get('/api/v1/financial-data/total-frauds', async (req, res) => {
+    try {
+        const fraudCount = await FinancialData.countDocuments({ fraud: { $gt: 0 } });
+        res.json({ totalFrauds: fraudCount });
+    } catch (err) {
+        console.error('Error fetching total fraud count:', err);
+        res.status(500).json({ message: 'Internal server error', error: err.message });
+    }
+});
+  
 // Start the server
 app.listen(port, () => console.log(`Server running on port ${port}`));

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import DataTable from '../charts/DataTable';
 import MerchantBarChart from '../charts/MerchantBarChart';
-import MerchantsPerCategoryBarChart from '../charts/MerchantsPerCategoryBarChart';
 import PieChart from '../charts/PieChart';
-import FilterComponent from './Filter'; // Import the FilterComponent
+import Filter from './Filter'; // Import the FilterComponent
+import BarChart from '../charts/BarChart';
+import FraudByCategoryChart from '../charts/FraudCategory';
+import FraudCountBox from '../charts/FraudCountBox';
 
 const Dashboard = ({ onLogout }) => {
   const [filters, setFilters] = useState({});
@@ -15,7 +17,7 @@ const Dashboard = ({ onLogout }) => {
     })
       .then(() => {
         onLogout();
-        // Remove navigation to login page
+        // Redirect to login page handled by routing
       })
       .catch((err) => console.error('Error during logout:', err));
   };
@@ -32,10 +34,13 @@ const Dashboard = ({ onLogout }) => {
       >
         Sign Out
       </button>
-      <FilterComponent onFilterChange={handleFilterChange} />
+      
+      <Filter onFilterChange={handleFilterChange} />
       <DataTable filters={filters} />
+      <FraudCountBox/>
+      <BarChart filters={filters}/>
       <MerchantBarChart filters={filters} />
-      <MerchantsPerCategoryBarChart filters={filters} />
+      <FraudByCategoryChart filters={filters}/>
       <PieChart filters={filters} />
     </div>
   );
