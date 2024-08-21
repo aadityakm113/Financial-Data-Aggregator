@@ -3,27 +3,107 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const dotenv = require('dotenv').config();
+const passport = require('passport');
+const session = require('express-session');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
 const app = express();
 const port = 8000;
 
+
 // Middleware
+require('dotenv').config();
 app.use(express.json());
 app.use(cors());
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: true,
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
+// Mongoose connection
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("Connected to MongoDB"))
   .catch(err => console.error("Error connecting to MongoDB:", err));
 
+// User Schema
 const userSchema = new mongoose.Schema({
+  googleId: { type: String, unique: true },
   name: String,
-  phone: String,
-  username: { type: String, unique: true },
-  password: { type: String, required: true },
   email: { type: String, unique: true },
+  password: String,
 });
 
 const User = mongoose.model('User', userSchema, 'users');
+
+// Passport Google OAuth strategy
+passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: "http://localhost:8000/auth/google/callback",
+  },
+  async (accessToken, refreshToken, profile, done) => {
+    try {
+      let user = await User.findOne({ googleId: profile.id });
+      if (!user) {
+        user = new User({
+          googleId: profile.id,
+          name: profile.displayName,
+          email: profile.emails[0].value,
+        });
+        await user.save();
+      }
+      return done(null, user);
+    } catch (error) {
+      console.error('Error in OAuth:', error);
+      return done(error, null);
+    }
+  }
+));
+
+// Serialize and deserialize user
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
+    try {
+      const user = await User.findById(id);
+      done(null, user);
+    } catch (err) {
+      done(err);
+    }
+  });
+
+// Routes for Google OAuth
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  (req, res) => {
+    res.redirect('/');
+  });
+
+  app.get('/logout', (req, res) => {
+    req.logout(err => {
+      if (err) {
+        console.error('Error during logout:', err);
+        return res.status(500).json({ message: 'Logout failed' });
+      }
+      req.session.destroy((err) => {
+        if (err) {
+          console.error('Error destroying session:', err);
+          return res.status(500).json({ message: 'Failed to destroy session' });
+        }
+        res.clearCookie('connect.sid'); // Clear the session cookie
+        res.redirect('/login'); // Redirect to the login page
+      });
+    });
+  });
+  
 
 // Register Route
 app.post('/register', async (req, res) => {
@@ -87,26 +167,15 @@ const FinancialData = mongoose.model('FinancialData', financialDataSchema, 'data
 
 // Paginated Route for Financial Data
 app.get('/api/v1/financial-data', async (req, res) => {
-  // Parse the page and limit parameters from the query string
-  const page = parseInt(req.query.page) || 1; // Default to page 1 if not provided
-  const limit = parseInt(req.query.limit) || 100; // Default to limit 100 if not provided
-
-  // Calculate the number of documents to skip
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 100;
   const skip = (page - 1) * limit;
 
   try {
-    // Fetch the paginated data
-    const data = await FinancialData.find()
-      .skip(skip)   // Skip the number of documents based on page and limit
-      .limit(limit); // Limit the number of documents returned
-
-    // Fetch the total count of documents to provide total page information
+    const data = await FinancialData.find().skip(skip).limit(limit);
     const totalCount = await FinancialData.countDocuments();
-    
-    // Calculate the total number of pages
     const totalPages = Math.ceil(totalCount / limit);
 
-    // Respond with paginated data and metadata
     res.json({
       page,
       limit,
@@ -125,53 +194,53 @@ app.get('/api/v1/financial-data', async (req, res) => {
 
 // Route to get category distribution
 app.get('/api/v1/financial-data/categories', async (req, res) => {
-    try {
-      const categories = await FinancialData.aggregate([
-        { $group: { _id: "$category", count: { $sum: 1 } } }
-      ]);
-      res.json(categories);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-  
-  // Route to get merchant frequency
-  app.get('/api/v1/financial-data/merchants', async (req, res) => {
-    try {
-      const merchants = await FinancialData.aggregate([
-        { $group: { _id: "$merchant", count: { $sum: 1 } } }
-      ]);
-      res.json(merchants);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-  
-  // Route to get merchants per category
-  app.get('/api/v1/financial-data/merchants-per-category', async (req, res) => {
-    try {
-      const merchantsPerCategory = await FinancialData.aggregate([
-        { $group: { _id: { category: "$category", merchant: "$merchant" }, count: { $sum: 1 } } },
-        { $group: { _id: "$_id.category", merchants: { $push: { merchant: "$_id.merchant", count: "$count" } } } }
-      ]);
-      res.json(merchantsPerCategory);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-  
-  // Route to get customers by age and gender
-  app.get('/api/v1/financial-data/customers-by-age-gender', async (req, res) => {
-    try {
-      const customersByAgeGender = await FinancialData.aggregate([
-        { $group: { _id: { age: "$age", gender: "$gender" }, count: { $sum: 1 } } },
-        { $group: { _id: "$_id.age", genders: { $push: { gender: "$_id.gender", count: "$count" } } } }
-      ]);
-      res.json(customersByAgeGender);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  });
+  try {
+    const categories = await FinancialData.aggregate([
+      { $group: { _id: "$category", count: { $sum: 1 } } }
+    ]);
+    res.json(categories);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Route to get merchant frequency
+app.get('/api/v1/financial-data/merchants', async (req, res) => {
+  try {
+    const merchants = await FinancialData.aggregate([
+      { $group: { _id: "$merchant", count: { $sum: 1 } } }
+    ]);
+    res.json(merchants);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Route to get merchants per category
+app.get('/api/v1/financial-data/merchants-per-category', async (req, res) => {
+  try {
+    const merchantsPerCategory = await FinancialData.aggregate([
+      { $group: { _id: { category: "$category", merchant: "$merchant" }, count: { $sum: 1 } } },
+      { $group: { _id: "$_id.category", merchants: { $push: { merchant: "$_id.merchant", count: "$count" } } } }
+    ]);
+    res.json(merchantsPerCategory);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Route to get customers by age and gender
+app.get('/api/v1/financial-data/customers-by-age-gender', async (req, res) => {
+  try {
+    const customersByAgeGender = await FinancialData.aggregate([
+      { $group: { _id: { age: "$age", gender: "$gender" }, count: { $sum: 1 } } },
+      { $group: { _id: "$_id.age", genders: { $push: { gender: "$_id.gender", count: "$count" } } } }
+    ]);
+    res.json(customersByAgeGender);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 // Start the server
 app.listen(port, () => console.log(`Server running on port ${port}`));
